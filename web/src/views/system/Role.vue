@@ -148,7 +148,7 @@
 
 <script setup>
 import { ref, computed, onMounted, nextTick } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getRoleList,
   createRole,
@@ -296,8 +296,26 @@ async function handleAssignMenus() {
     const checkedKeys = menuTreeRef.value.getCheckedKeys()
     const halfCheckedKeys = menuTreeRef.value.getHalfCheckedKeys()
     const allKeys = [...checkedKeys, ...halfCheckedKeys]
-    await assignRoleMenus(currentRole.value.id, allKeys)
-    ElMessage.success('菜单授权成功')
+
+    if (allKeys.length === 0) {
+      try {
+        await ElMessageBox.confirm(
+          '当前未勾选任何菜单，提交后该角色将失去所有菜单访问权限，确认继续？',
+          '清空菜单授权',
+          {
+            confirmButtonText: '确认清空',
+            cancelButtonText: '取消',
+            type: 'warning',
+          }
+        )
+      } catch {
+        menuAuthLoading.value = false
+        return
+      }
+    }
+
+    const res = await assignRoleMenus(currentRole.value.id, allKeys)
+    ElMessage.success(res.message || '菜单授权成功')
     menuAuthVisible.value = false
     await afterAuthRefresh()
   } finally {
@@ -320,8 +338,25 @@ function handlePermCheckAll(val) {
 async function handleAssignPermissions() {
   permAuthLoading.value = true
   try {
-    await assignRolePermissions(currentRole.value.id, checkedPermIds.value)
-    ElMessage.success('权限授权成功')
+    if (checkedPermIds.value.length === 0) {
+      try {
+        await ElMessageBox.confirm(
+          '当前未勾选任何操作权限，提交后该角色将失去所有操作权限，确认继续？',
+          '清空操作权限',
+          {
+            confirmButtonText: '确认清空',
+            cancelButtonText: '取消',
+            type: 'warning',
+          }
+        )
+      } catch {
+        permAuthLoading.value = false
+        return
+      }
+    }
+
+    const res = await assignRolePermissions(currentRole.value.id, checkedPermIds.value)
+    ElMessage.success(res.message || '权限授权成功')
     permAuthVisible.value = false
     await afterAuthRefresh()
   } finally {
@@ -408,11 +443,29 @@ async function handleMatrixSave() {
         permIds.push(row.permissionId)
       }
     }
-    await Promise.all([
+
+    if (menuIds.size === 0 && permIds.length === 0) {
+      try {
+        await ElMessageBox.confirm(
+          '当前未勾选任何权限，提交后该角色将失去所有菜单和操作权限，确认继续？',
+          '清空角色权限',
+          {
+            confirmButtonText: '确认清空',
+            cancelButtonText: '取消',
+            type: 'warning',
+          }
+        )
+      } catch {
+        matrixLoading.value = false
+        return
+      }
+    }
+
+    const [menuRes, permRes] = await Promise.all([
       assignRoleMenus(currentRole.value.id, [...menuIds]),
       assignRolePermissions(currentRole.value.id, permIds),
     ])
-    ElMessage.success('权限矩阵保存成功')
+    ElMessage.success(`权限矩阵保存成功（菜单 ${menuRes.data?.count ?? menuIds.size} 个，权限 ${permRes.data?.count ?? permIds.length} 个）`)
     matrixVisible.value = false
     await afterAuthRefresh()
   } finally {
