@@ -39,3 +39,7 @@ export function batchAssignRoleMenus(roleIds, menuIds) {
 export function batchAssignRolePermissions(roleIds, permissionIds) {
   return request.post('/roles/batch/permissions', { role_ids: roleIds, permission_ids: permissionIds })
 }
+
+export function assignRoleMatrix(roleId, menuIds, permissionIds) {
+  return request.post(`/roles/${roleId}/matrix`, { menu_ids: menuIds, permission_ids: permissionIds })
+}

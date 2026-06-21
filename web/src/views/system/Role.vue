@@ -143,6 +143,25 @@
       <p style="margin-bottom: 12px; color: #909399">
         角色：<strong>{{ currentRole.name }}</strong>（{{ currentRole.code }}）
       </p>
+      <el-alert
+        v-if="matrixSubmitFailed && matrixLastError"
+        :title="matrixLastError.isRollback ? '提交失败，数据已回滚（角色权限未受影响）' : '提交失败，请检查后重试'"
+        :type="matrixLastError.isRollback ? 'warning' : 'error'"
+        show-icon
+        :closable="false"
+        style="margin-bottom: 12px"
+      >
+        <template #default>
+          <div style="font-size: 13px">
+            <div>{{ matrixLastError.message }}</div>
+            <div v-if="matrixLastError.validateErrors && matrixLastError.validateErrors.length > 0" style="margin-top: 6px">
+              <div v-for="(err, idx) in matrixLastError.validateErrors" :key="idx" style="line-height: 1.6">
+                • {{ err }}
+              </div>
+            </div>
+          </div>
+        </template>
+      </el-alert>
       <div class="matrix-wrap">
         <el-table :data="matrixData" border size="small" max-height="60vh">
           <el-table-column prop="menuName" label="菜单" min-width="140" fixed />
@@ -160,7 +179,27 @@
       </div>
       <template #footer>
         <el-button @click="matrixVisible = false">取消</el-button>
-        <el-button type="primary" :loading="matrixLoading" @click="handleMatrixSave">保存矩阵</el-button>
+        <el-button
+          v-if="matrixSubmitFailed"
+          type="warning"
+          :disabled="!matrixOriginalSnapshot"
+          :loading="matrixLoading"
+          @click="handleMatrixRollback"
+        >
+          <el-icon><RefreshLeft /></el-icon> 恢复初始状态
+        </el-button>
+        <el-button
+          v-if="matrixSubmitFailed"
+          type="danger"
+          :loading="matrixLoading"
+          @click="handleMatrixSave"
+        >
+          <el-icon><RefreshRight /></el-icon> 重试提交
+        </el-button>
+        <el-button type="primary" :loading="matrixLoading" @click="handleMatrixSave">
+          <template v-if="matrixSubmitFailed">再次提交</template>
+          <template v-else>保存矩阵</template>
+        </el-button>
       </template>
     </el-dialog>
 
@@ -267,6 +306,7 @@ import {
   assignRolePermissions,
   batchAssignRoleMenus,
   batchAssignRolePermissions,
+  assignRoleMatrix,
 } from '@/api/role'
 import { getMenuList, getEnabledMenuList } from '@/api/menu'
 import { getPermissionList, getEnabledPermissionList } from '@/api/permission'
@@ -296,6 +336,9 @@ const allPermIds = ref([])
 const matrixVisible = ref(false)
 const matrixLoading = ref(false)
 const matrixData = ref([])
+const matrixOriginalSnapshot = ref(null)
+const matrixLastError = ref(null)
+const matrixSubmitFailed = ref(false)
 
 const currentRole = ref({})
 
@@ -553,6 +596,9 @@ async function openPermMatrix(role) {
     }
   }
   matrixData.value = rows
+  matrixOriginalSnapshot.value = JSON.parse(JSON.stringify(rows))
+  matrixLastError.value = null
+  matrixSubmitFailed.value = false
   matrixVisible.value = true
 }
 
@@ -604,16 +650,72 @@ async function handleMatrixSave() {
       }
     }
 
-    const [menuRes, permRes] = await Promise.all([
-      assignRoleMenus(currentRole.value.id, [...menuIds]),
-      assignRolePermissions(currentRole.value.id, permIds),
-    ])
-    ElMessage.success(`权限矩阵保存成功（菜单 ${menuRes.data?.count ?? menuIds.size} 个，权限 ${permRes.data?.count ?? permIds.length} 个）`)
+    const res = await assignRoleMatrix(currentRole.value.id, [...menuIds], permIds)
+    ElMessage.success(
+      `权限矩阵保存成功（菜单 ${res.data?.menu_count ?? menuIds.size} 个，权限 ${res.data?.permission_count ?? permIds.length} 个）`
+    )
+    matrixLastError.value = null
+    matrixSubmitFailed.value = false
     matrixVisible.value = false
     await afterAuthRefresh()
+  } catch (err) {
+    matrixSubmitFailed.value = true
+    const rawResp = err?.response?.data
+    const isRollback = rawResp?.data?.rollback === true
+    const validateErrors = rawResp?.data?.validate_errors
+    const errMsg = rawResp?.message || err?.message || '提交失败，请重试'
+
+    let detailHtml = ''
+    if (validateErrors && validateErrors.length > 0) {
+      detailHtml =
+        '<div style="margin-top: 8px; color: #f56c6c; font-size: 12px; line-height: 1.6">' +
+        validateErrors.map((e) => `• ${e}`).join('<br/>') +
+        '</div>'
+    }
+
+    const rollbackHint = isRollback
+      ? '<div style="color: #e6a23c; margin-top: 6px">✓ 数据库已自动回滚，角色权限未受影响</div>'
+      : '<div style="color: #f56c6c; margin-top: 6px">⚠ 请检查失败原因，修复后可重试或回滚到初始状态</div>'
+
+    matrixLastError.value = {
+      message: errMsg,
+      isRollback,
+      validateErrors: validateErrors || [],
+    }
+
+    try {
+      await ElMessageBox({
+        title: '权限矩阵提交失败',
+        dangerouslyUseHTMLString: true,
+        message: `
+          <div style="font-size: 14px">
+            <div><strong>错误原因：</strong></div>
+            <div style="color: #f56c6c; margin-top: 4px">${errMsg}</div>
+            ${detailHtml}
+            ${rollbackHint}
+            <div style="margin-top: 12px; color: #909399; font-size: 12px">
+              提示：关闭此提示后，可在弹窗底部使用「重试提交」或「恢复初始状态」按钮继续操作。
+            </div>
+          </div>
+        `,
+        showCancelButton: false,
+        confirmButtonText: '我知道了',
+        type: 'error',
+      })
+    } catch (_) {
+      // 用户关闭弹窗也继续
+    }
   } finally {
     matrixLoading.value = false
   }
+}
+
+function handleMatrixRollback() {
+  if (!matrixOriginalSnapshot.value) return
+  matrixData.value = JSON.parse(JSON.stringify(matrixOriginalSnapshot.value))
+  matrixLastError.value = null
+  matrixSubmitFailed.value = false
+  ElMessage.success('已恢复到打开时的初始状态')
 }
 
 function handleSelectionChange(selection) {

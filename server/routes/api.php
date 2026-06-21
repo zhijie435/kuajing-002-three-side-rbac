@@ -12,6 +12,7 @@ $routes = [
     ['POST', '/api/roles/batch/permissions', 'RoleController@batchAssignPermissions'],
     ['POST', '/api/roles/{id}/menus', 'RoleController@assignMenus'],
     ['POST', '/api/roles/{id}/permissions', 'RoleController@assignPermissions'],
+    ['POST', '/api/roles/{id}/matrix', 'RoleController@assignMatrix'],
     ['GET', '/api/roles/{id}/menus', 'RoleController@getMenus'],
     ['GET', '/api/roles/{id}/permissions', 'RoleController@getPermissions'],
 

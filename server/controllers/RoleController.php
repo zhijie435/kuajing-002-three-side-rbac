@@ -534,6 +534,138 @@ class RoleController
         ]);
     }
 
+    public function assignMatrix($id)
+    {
+        $data = $this->getInput();
+        $menuIds = $data['menu_ids'] ?? [];
+        $permissionIds = $data['permission_ids'] ?? [];
+
+        $menuIds = is_array($menuIds) ? array_map('intval', $menuIds) : [];
+        $permissionIds = is_array($permissionIds) ? array_map('intval', $permissionIds) : [];
+
+        $stmt = $this->pdo->prepare('SELECT id, name, app_type FROM `role` WHERE id = :id');
+        $stmt->execute([':id' => intval($id)]);
+        $role = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$role) {
+            $this->json(['code' => 1, 'message' => '角色不存在'], 404);
+        }
+
+        $validateErrors = [];
+
+        if (!empty($menuIds)) {
+            $placeholders = implode(',', array_fill(0, count($menuIds), '?'));
+            $stmt = $this->pdo->prepare("SELECT id, name, app_type, status FROM `menu` WHERE id IN ($placeholders)");
+            $stmt->execute($menuIds);
+            $menus = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $foundMenuIds = array_column($menus, 'id');
+            $invalidMenuIds = array_values(array_diff($menuIds, $foundMenuIds));
+
+            $wrongAppMenuIds = [];
+            $disabledMenuIds = [];
+            foreach ($menus as $m) {
+                if ($m['app_type'] !== $role['app_type']) {
+                    $wrongAppMenuIds[] = intval($m['id']);
+                }
+                if (intval($m['status']) !== 1) {
+                    $disabledMenuIds[] = intval($m['id']);
+                }
+            }
+
+            if (!empty($invalidMenuIds)) {
+                $validateErrors[] = '不存在的菜单ID: ' . implode(', ', $invalidMenuIds);
+            }
+            if (!empty($wrongAppMenuIds)) {
+                $validateErrors[] = '角色端类型[' . $role['app_type'] . ']不匹配的菜单ID: ' . implode(', ', $wrongAppMenuIds);
+            }
+            if (!empty($disabledMenuIds)) {
+                $validateErrors[] = '已禁用的菜单ID: ' . implode(', ', $disabledMenuIds);
+            }
+        }
+
+        if (!empty($permissionIds)) {
+            $placeholders = implode(',', array_fill(0, count($permissionIds), '?'));
+            $stmt = $this->pdo->prepare("SELECT id, name, app_type, status, menu_id FROM `permission` WHERE id IN ($placeholders)");
+            $stmt->execute($permissionIds);
+            $permissions = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $foundPermIds = array_column($permissions, 'id');
+            $invalidPermIds = array_values(array_diff($permissionIds, $foundPermIds));
+
+            $wrongAppPermIds = [];
+            $disabledPermIds = [];
+            $orphanPermIds = [];
+            $menuIdSet = array_flip($menuIds);
+            foreach ($permissions as $p) {
+                if ($p['app_type'] !== $role['app_type']) {
+                    $wrongAppPermIds[] = intval($p['id']);
+                }
+                if (intval($p['status']) !== 1) {
+                    $disabledPermIds[] = intval($p['id']);
+                }
+                if (!empty($p['menu_id']) && !isset($menuIdSet[intval($p['menu_id'])])) {
+                    $orphanPermIds[] = intval($p['id']);
+                }
+            }
+
+            if (!empty($invalidPermIds)) {
+                $validateErrors[] = '不存在的权限ID: ' . implode(', ', $invalidPermIds);
+            }
+            if (!empty($wrongAppPermIds)) {
+                $validateErrors[] = '角色端类型[' . $role['app_type'] . ']不匹配的权限ID: ' . implode(', ', $wrongAppPermIds);
+            }
+            if (!empty($disabledPermIds)) {
+                $validateErrors[] = '已禁用的权限ID: ' . implode(', ', $disabledPermIds);
+            }
+            if (!empty($orphanPermIds)) {
+                $validateErrors[] = '所属菜单未授权的权限ID: ' . implode(', ', $orphanPermIds) . '（请先勾选对应菜单）';
+            }
+        }
+
+        if (!empty($validateErrors)) {
+            $this->json([
+                'code' => 1,
+                'message' => '数据校验失败',
+                'data' => ['validate_errors' => $validateErrors],
+            ], 400);
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            $this->pdo->prepare('DELETE FROM role_menu WHERE role_id = :role_id')->execute([':role_id' => intval($id)]);
+            $this->pdo->prepare('DELETE FROM role_permission WHERE role_id = :role_id')->execute([':role_id' => intval($id)]);
+
+            if (!empty($menuIds)) {
+                $stmt = $this->pdo->prepare('INSERT INTO role_menu (role_id, menu_id) VALUES (:role_id, :menu_id)');
+                foreach (array_unique($menuIds) as $menuId) {
+                    $stmt->execute([':role_id' => intval($id), ':menu_id' => $menuId]);
+                }
+            }
+
+            if (!empty($permissionIds)) {
+                $stmt = $this->pdo->prepare('INSERT INTO role_permission (role_id, permission_id) VALUES (:role_id, :permission_id)');
+                foreach (array_unique($permissionIds) as $permissionId) {
+                    $stmt->execute([':role_id' => intval($id), ':permission_id' => $permissionId]);
+                }
+            }
+
+            $this->pdo->commit();
+            $this->json([
+                'code' => 0,
+                'data' => [
+                    'menu_count' => count($menuIds),
+                    'permission_count' => count($permissionIds),
+                ],
+                'message' => '权限矩阵保存成功',
+            ]);
+        } catch (Exception $e) {
+            $this->pdo->rollBack();
+            $this->json([
+                'code' => 1,
+                'message' => '权限矩阵保存失败，数据库已自动回滚：' . $e->getMessage(),
+                'data' => ['rollback' => true],
+            ], 500);
+        }
+    }
+
     private function getInput()
     {
         $raw = file_get_contents('php://input');
