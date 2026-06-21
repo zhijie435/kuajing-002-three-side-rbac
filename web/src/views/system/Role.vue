@@ -161,6 +161,9 @@ import {
 } from '@/api/role'
 import { getMenuList } from '@/api/menu'
 import { getPermissionList } from '@/api/permission'
+import { useUserStore } from '@/store/user'
+
+const userStore = useUserStore()
 
 const appType = ref('platform')
 const roleList = ref([])
@@ -296,6 +299,7 @@ async function handleAssignMenus() {
     await assignRoleMenus(currentRole.value.id, allKeys)
     ElMessage.success('菜单授权成功')
     menuAuthVisible.value = false
+    await afterAuthRefresh()
   } finally {
     menuAuthLoading.value = false
   }
@@ -319,6 +323,7 @@ async function handleAssignPermissions() {
     await assignRolePermissions(currentRole.value.id, checkedPermIds.value)
     ElMessage.success('权限授权成功')
     permAuthVisible.value = false
+    await afterAuthRefresh()
   } finally {
     permAuthLoading.value = false
   }
@@ -409,8 +414,20 @@ async function handleMatrixSave() {
     ])
     ElMessage.success('权限矩阵保存成功')
     matrixVisible.value = false
+    await afterAuthRefresh()
   } finally {
     matrixLoading.value = false
+  }
+}
+
+async function afterAuthRefresh() {
+  await loadRoles()
+  if (
+    userStore.role &&
+    userStore.role.id === currentRole.value.id &&
+    userStore.appType === appType.value
+  ) {
+    await userStore.fetchUserInfo()
   }
 }
 
