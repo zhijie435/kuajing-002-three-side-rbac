@@ -258,6 +258,196 @@ class RoleController
         $this->json(['code' => 0, 'data' => array_map('intval', $permissionIds)]);
     }
 
+    public function batchAssignMenus()
+    {
+        $data = $this->getInput();
+        $roleIds = $data['role_ids'] ?? [];
+        $menuIds = $data['menu_ids'] ?? [];
+
+        $roleIds = is_array($roleIds) ? array_map('intval', $roleIds) : [];
+        $menuIds = is_array($menuIds) ? array_map('intval', $menuIds) : [];
+
+        if (empty($roleIds)) {
+            $this->json(['code' => 1, 'message' => '请选择要授权的角色'], 400);
+        }
+
+        $successCount = 0;
+        $failCount = 0;
+        $failDetails = [];
+
+        foreach ($roleIds as $roleId) {
+            try {
+                $stmt = $this->pdo->prepare('SELECT id, name, app_type FROM `role` WHERE id = :id');
+                $stmt->execute([':id' => $roleId]);
+                $role = $stmt->fetch(PDO::FETCH_ASSOC);
+                if (!$role) {
+                    $failCount++;
+                    $failDetails[] = [
+                        'role_id' => $roleId,
+                        'role_name' => '',
+                        'reason' => '角色不存在',
+                    ];
+                    continue;
+                }
+
+                if (!empty($menuIds)) {
+                    $placeholders = implode(',', array_fill(0, count($menuIds), '?'));
+                    $stmt = $this->pdo->prepare("SELECT COUNT(*) AS cnt FROM `menu` WHERE id IN ($placeholders) AND app_type = ?");
+                    $params = $menuIds;
+                    $params[] = $role['app_type'];
+                    $stmt->execute($params);
+                    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+                    if (intval($row['cnt']) !== count($menuIds)) {
+                        $failCount++;
+                        $failDetails[] = [
+                            'role_id' => $roleId,
+                            'role_name' => $role['name'],
+                            'reason' => '提交的菜单包含无效或不属于当前端的菜单',
+                        ];
+                        continue;
+                    }
+                }
+
+                $this->pdo->beginTransaction();
+                try {
+                    $this->pdo->prepare('DELETE FROM role_menu WHERE role_id = :role_id')->execute([':role_id' => $roleId]);
+
+                    if (!empty($menuIds)) {
+                        $stmt = $this->pdo->prepare('INSERT INTO role_menu (role_id, menu_id) VALUES (:role_id, :menu_id)');
+                        foreach (array_unique($menuIds) as $menuId) {
+                            $stmt->execute([':role_id' => $roleId, ':menu_id' => $menuId]);
+                        }
+                    }
+
+                    $this->pdo->commit();
+                    $successCount++;
+                } catch (Exception $e) {
+                    $this->pdo->rollBack();
+                    $failCount++;
+                    $failDetails[] = [
+                        'role_id' => $roleId,
+                        'role_name' => $role['name'],
+                        'reason' => '授权失败: ' . $e->getMessage(),
+                    ];
+                }
+            } catch (Exception $e) {
+                $failCount++;
+                $failDetails[] = [
+                    'role_id' => $roleId,
+                    'role_name' => '',
+                    'reason' => '处理异常: ' . $e->getMessage(),
+                ];
+            }
+        }
+
+        $this->json([
+            'code' => 0,
+            'data' => [
+                'total' => count($roleIds),
+                'success_count' => $successCount,
+                'fail_count' => $failCount,
+                'fail_details' => $failDetails,
+            ],
+            'message' => "批量菜单授权完成，成功 {$successCount} 个，失败 {$failCount} 个",
+        ]);
+    }
+
+    public function batchAssignPermissions()
+    {
+        $data = $this->getInput();
+        $roleIds = $data['role_ids'] ?? [];
+        $permissionIds = $data['permission_ids'] ?? [];
+
+        $roleIds = is_array($roleIds) ? array_map('intval', $roleIds) : [];
+        $permissionIds = is_array($permissionIds) ? array_map('intval', $permissionIds) : [];
+
+        if (empty($roleIds)) {
+            $this->json(['code' => 1, 'message' => '请选择要授权的角色'], 400);
+        }
+
+        $successCount = 0;
+        $failCount = 0;
+        $failDetails = [];
+
+        foreach ($roleIds as $roleId) {
+            try {
+                $stmt = $this->pdo->prepare('SELECT id, name, app_type FROM `role` WHERE id = :id');
+                $stmt->execute([':id' => $roleId]);
+                $role = $stmt->fetch(PDO::FETCH_ASSOC);
+                if (!$role) {
+                    $failCount++;
+                    $failDetails[] = [
+                        'role_id' => $roleId,
+                        'role_name' => '',
+                        'reason' => '角色不存在',
+                    ];
+                    continue;
+                }
+
+                if (!empty($permissionIds)) {
+                    $placeholders = implode(',', array_fill(0, count($permissionIds), '?'));
+                    $stmt = $this->pdo->prepare("SELECT COUNT(*) AS cnt FROM `permission` WHERE id IN ($placeholders) AND app_type = ?");
+                    $params = $permissionIds;
+                    $params[] = $role['app_type'];
+                    $stmt->execute($params);
+                    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+                    if (intval($row['cnt']) !== count($permissionIds)) {
+                        $failCount++;
+                        $failDetails[] = [
+                            'role_id' => $roleId,
+                            'role_name' => $role['name'],
+                            'reason' => '提交的权限包含无效或不属于当前端的权限',
+                        ];
+                        continue;
+                    }
+                }
+
+                $this->pdo->beginTransaction();
+                try {
+                    $this->pdo->prepare('DELETE FROM role_permission WHERE role_id = :role_id')->execute([':role_id' => $roleId]);
+
+                    if (!empty($permissionIds)) {
+                        $stmt = $this->pdo->prepare('INSERT INTO role_permission (role_id, permission_id) VALUES (:role_id, :permission_id)');
+                        foreach (array_unique($permissionIds) as $permissionId) {
+                            $stmt->execute([':role_id' => $roleId, ':permission_id' => $permissionId]);
+                        }
+                    }
+
+                    $this->pdo->commit();
+                    $successCount++;
+                } catch (Exception $e) {
+                    $this->pdo->rollBack();
+                    $failCount++;
+                    $failDetails[] = [
+                        'role_id' => $roleId,
+                        'role_name' => $role['name'],
+                        'reason' => '授权失败: ' . $e->getMessage(),
+                    ];
+                }
+            } catch (Exception $e) {
+                $failCount++;
+                $failDetails[] = [
+                    'role_id' => $roleId,
+                    'role_name' => '',
+                    'reason' => '处理异常: ' . $e->getMessage(),
+                ];
+            }
+        }
+
+        $this->json([
+            'code' => 0,
+            'data' => [
+                'total' => count($roleIds),
+                'success_count' => $successCount,
+                'fail_count' => $failCount,
+                'fail_details' => $failDetails,
+            ],
+            'message' => "批量权限授权完成，成功 {$successCount} 个，失败 {$failCount} 个",
+        ]);
+    }
+
     private function getInput()
     {
         $raw = file_get_contents('php://input');

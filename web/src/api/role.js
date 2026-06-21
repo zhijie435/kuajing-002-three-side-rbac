@@ -31,3 +31,11 @@ export function getRolePermissions(roleId) {
 export function assignRolePermissions(roleId, permissionIds) {
   return request.post(`/roles/${roleId}/permissions`, { permission_ids: permissionIds })
 }
+
+export function batchAssignRoleMenus(roleIds, menuIds) {
+  return request.post('/roles/batch/menus', { role_ids: roleIds, menu_ids: menuIds })
+}
+
+export function batchAssignRolePermissions(roleIds, permissionIds) {
+  return request.post('/roles/batch/permissions', { role_ids: roleIds, permission_ids: permissionIds })
+}

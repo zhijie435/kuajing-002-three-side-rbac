@@ -8,6 +8,8 @@ $routes = [
     ['POST', '/api/roles', 'RoleController@store'],
     ['PUT', '/api/roles/{id}', 'RoleController@update'],
     ['DELETE', '/api/roles/{id}', 'RoleController@delete'],
+    ['POST', '/api/roles/batch/menus', 'RoleController@batchAssignMenus'],
+    ['POST', '/api/roles/batch/permissions', 'RoleController@batchAssignPermissions'],
     ['POST', '/api/roles/{id}/menus', 'RoleController@assignMenus'],
     ['POST', '/api/roles/{id}/permissions', 'RoleController@assignPermissions'],
     ['GET', '/api/roles/{id}/menus', 'RoleController@getMenus'],

@@ -17,7 +17,27 @@
         </div>
       </template>
 
-      <el-table :data="roleList" border stripe>
+      <div class="batch-bar" v-if="selectedRoles.length > 0">
+        <span class="batch-tip">
+          已选择 <strong>{{ selectedRoles.length }}</strong> 个角色
+        </span>
+        <el-button type="primary" size="small" @click="openBatchMenuAuth">
+          批量菜单授权
+        </el-button>
+        <el-button type="primary" size="small" @click="openBatchPermAuth">
+          批量操作权限
+        </el-button>
+        <el-button size="small" @click="clearSelection">取消选择</el-button>
+      </div>
+
+      <el-table
+        :data="roleList"
+        border
+        stripe
+        ref="roleTableRef"
+        @selection-change="handleSelectionChange"
+      >
+        <el-table-column type="selection" width="50" />
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column prop="name" label="角色名称" min-width="120" />
         <el-table-column prop="code" label="角色编码" min-width="140" />
@@ -143,6 +163,88 @@
         <el-button type="primary" :loading="matrixLoading" @click="handleMatrixSave">保存矩阵</el-button>
       </template>
     </el-dialog>
+
+    <!-- 批量菜单授权弹窗 -->
+    <el-dialog v-model="batchMenuAuthVisible" title="批量菜单授权" width="500px" destroy-on-close>
+      <p style="margin-bottom: 12px; color: #909399">
+        已选择 <strong>{{ selectedRoles.length }}</strong> 个角色，将为它们统一设置菜单权限
+      </p>
+      <el-tree
+        ref="batchMenuTreeRef"
+        :data="menuOptions"
+        show-checkbox
+        node-key="id"
+        :default-checked-keys="batchCheckedMenuKeys"
+        :props="{ label: 'name', children: 'children' }"
+        check-strictly
+      />
+      <template #footer>
+        <el-button @click="batchMenuAuthVisible = false">取消</el-button>
+        <el-button type="primary" :loading="batchMenuAuthLoading" @click="handleBatchAssignMenus">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 批量操作权限授权弹窗 -->
+    <el-dialog v-model="batchPermAuthVisible" title="批量操作权限授权" width="600px" destroy-on-close>
+      <p style="margin-bottom: 12px; color: #909399">
+        已选择 <strong>{{ selectedRoles.length }}</strong> 个角色，将为它们统一设置操作权限
+      </p>
+      <el-checkbox v-model="batchPermCheckAll" :indeterminate="batchPermIndeterminate" @change="handleBatchPermCheckAll">
+        全选
+      </el-checkbox>
+      <el-divider style="margin: 12px 0" />
+      <el-checkbox-group v-model="batchCheckedPermIds">
+        <div v-for="group in permissionGroups" :key="group.menuName" style="margin-bottom: 16px">
+          <div style="font-weight: 600; margin-bottom: 6px; color: #303133">{{ group.menuName }}</div>
+          <el-checkbox
+            v-for="perm in group.permissions"
+            :key="perm.id"
+            :value="perm.id"
+            style="margin-right: 16px; margin-bottom: 4px"
+          >
+            {{ perm.name }}（{{ perm.code }}）
+          </el-checkbox>
+        </div>
+      </el-checkbox-group>
+      <template #footer>
+        <el-button @click="batchPermAuthVisible = false">取消</el-button>
+        <el-button type="primary" :loading="batchPermAuthLoading" @click="handleBatchAssignPermissions">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 批量授权结果弹窗 -->
+    <el-dialog v-model="batchResultVisible" title="批量授权结果" width="560px" destroy-on-close>
+      <div class="batch-result-summary">
+        <el-descriptions :column="3" border size="small">
+          <el-descriptions-item label="总数">
+            <span>{{ batchResultData.total }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="成功">
+            <span style="color: #67c23a; font-weight: 600">{{ batchResultData.success_count }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="失败">
+            <span style="color: #f56c6c; font-weight: 600">{{ batchResultData.fail_count }}</span>
+          </el-descriptions-item>
+        </el-descriptions>
+      </div>
+
+      <div v-if="batchResultData.fail_details && batchResultData.fail_details.length > 0" style="margin-top: 16px">
+        <div style="font-weight: 600; margin-bottom: 8px; color: #f56c6c">失败明细</div>
+        <el-table :data="batchResultData.fail_details" border size="small" max-height="300px">
+          <el-table-column prop="role_id" label="角色ID" width="80" />
+          <el-table-column prop="role_name" label="角色名称" min-width="120">
+            <template #default="{ row }">
+              {{ row.role_name || '-' }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="reason" label="失败原因" min-width="200" />
+        </el-table>
+      </div>
+
+      <template #footer>
+        <el-button type="primary" @click="batchResultVisible = false">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -158,6 +260,8 @@ import {
   assignRoleMenus,
   getRolePermissions,
   assignRolePermissions,
+  batchAssignRoleMenus,
+  batchAssignRolePermissions,
 } from '@/api/role'
 import { getMenuList } from '@/api/menu'
 import { getPermissionList } from '@/api/permission'
@@ -189,6 +293,37 @@ const matrixLoading = ref(false)
 const matrixData = ref([])
 
 const currentRole = ref({})
+
+const roleTableRef = ref()
+const selectedRoles = ref([])
+
+const batchMenuAuthVisible = ref(false)
+const batchMenuAuthLoading = ref(false)
+const batchMenuTreeRef = ref()
+const batchCheckedMenuKeys = ref([])
+
+const batchPermAuthVisible = ref(false)
+const batchPermAuthLoading = ref(false)
+const batchCheckedPermIds = ref([])
+
+const batchResultVisible = ref(false)
+const batchResultData = ref({
+  total: 0,
+  success_count: 0,
+  fail_count: 0,
+  fail_details: [],
+})
+
+const batchPermCheckAll = computed({
+  get() {
+    return batchCheckedPermIds.value.length === allPermIds.value.length && allPermIds.value.length > 0
+  },
+  set() {},
+})
+
+const batchPermIndeterminate = computed(() => {
+  return batchCheckedPermIds.value.length > 0 && batchCheckedPermIds.value.length < allPermIds.value.length
+})
 
 const defaultRoleForm = () => ({
   id: null,
@@ -473,6 +608,111 @@ async function handleMatrixSave() {
   }
 }
 
+function handleSelectionChange(selection) {
+  selectedRoles.value = selection
+}
+
+function clearSelection() {
+  roleTableRef.value?.clearSelection()
+}
+
+async function openBatchMenuAuth() {
+  if (selectedRoles.value.length === 0) {
+    ElMessage.warning('请先选择角色')
+    return
+  }
+  await loadMenuOptions()
+  batchCheckedMenuKeys.value = []
+  batchMenuAuthVisible.value = true
+  await nextTick()
+  batchMenuTreeRef.value?.setCheckedKeys([])
+}
+
+async function handleBatchAssignMenus() {
+  batchMenuAuthLoading.value = true
+  try {
+    const checkedKeys = batchMenuTreeRef.value.getCheckedKeys()
+    const halfCheckedKeys = batchMenuTreeRef.value.getHalfCheckedKeys()
+    const allKeys = [...checkedKeys, ...halfCheckedKeys]
+
+    if (allKeys.length === 0) {
+      try {
+        await ElMessageBox.confirm(
+          '当前未勾选任何菜单，提交后选中角色将失去所有菜单访问权限，确认继续？',
+          '批量清空菜单授权',
+          {
+            confirmButtonText: '确认清空',
+            cancelButtonText: '取消',
+            type: 'warning',
+          }
+        )
+      } catch {
+        batchMenuAuthLoading.value = false
+        return
+      }
+    }
+
+    const roleIds = selectedRoles.value.map((r) => r.id)
+    const res = await batchAssignRoleMenus(roleIds, allKeys)
+    batchResultData.value = res.data
+    batchMenuAuthVisible.value = false
+    batchResultVisible.value = true
+    await afterBatchAuthRefresh()
+  } finally {
+    batchMenuAuthLoading.value = false
+  }
+}
+
+async function openBatchPermAuth() {
+  if (selectedRoles.value.length === 0) {
+    ElMessage.warning('请先选择角色')
+    return
+  }
+  await loadAllPermissions()
+  batchCheckedPermIds.value = []
+  batchPermAuthVisible.value = true
+}
+
+function handleBatchPermCheckAll(val) {
+  batchCheckedPermIds.value = val ? [...allPermIds.value] : []
+}
+
+async function handleBatchAssignPermissions() {
+  batchPermAuthLoading.value = true
+  try {
+    if (batchCheckedPermIds.value.length === 0) {
+      try {
+        await ElMessageBox.confirm(
+          '当前未勾选任何操作权限，提交后选中角色将失去所有操作权限，确认继续？',
+          '批量清空操作权限',
+          {
+            confirmButtonText: '确认清空',
+            cancelButtonText: '取消',
+            type: 'warning',
+          }
+        )
+      } catch {
+        batchPermAuthLoading.value = false
+        return
+      }
+    }
+
+    const roleIds = selectedRoles.value.map((r) => r.id)
+    const res = await batchAssignRolePermissions(roleIds, batchCheckedPermIds.value)
+    batchResultData.value = res.data
+    batchPermAuthVisible.value = false
+    batchResultVisible.value = true
+    await afterBatchAuthRefresh()
+  } finally {
+    batchPermAuthLoading.value = false
+  }
+}
+
+async function afterBatchAuthRefresh() {
+  await loadRoles()
+  clearSelection()
+}
+
 async function afterAuthRefresh() {
   await loadRoles()
   if (
@@ -513,5 +753,28 @@ onMounted(() => {
 }
 .matrix-wrap {
   overflow-x: auto;
+}
+.batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  background-color: #ecf5ff;
+  border: 1px solid #d9ecff;
+  border-radius: 4px;
+}
+.batch-tip {
+  flex: 1;
+  color: #409eff;
+  font-size: 14px;
+}
+.batch-tip strong {
+  color: #409eff;
+  font-weight: 600;
+  margin: 0 4px;
+}
+.batch-result-summary {
+  margin-bottom: 8px;
 }
 </style>
