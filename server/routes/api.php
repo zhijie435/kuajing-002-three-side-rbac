@@ -15,6 +15,7 @@ $routes = [
     ['POST', '/api/roles/{id}/matrix', 'RoleController@assignMatrix'],
     ['GET', '/api/roles/{id}/menus', 'RoleController@getMenus'],
     ['GET', '/api/roles/{id}/permissions', 'RoleController@getPermissions'],
+    ['GET', '/api/roles/{id}/matrix', 'RoleController@getMatrix'],
 
     ['GET', '/api/menus/{appType}', 'MenuController@index'],
     ['GET', '/api/menus/{appType}/tree', 'MenuController@tree'],

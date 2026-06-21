@@ -10,6 +10,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
+require_once __DIR__ . '/../core/Controller.php';
 require_once __DIR__ . '/../controllers/RoleController.php';
 require_once __DIR__ . '/../controllers/MenuController.php';
 require_once __DIR__ . '/../controllers/PermissionController.php';

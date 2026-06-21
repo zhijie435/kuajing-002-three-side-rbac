@@ -1,6 +1,6 @@
 <?php
 
-class MenuController
+class MenuController extends Controller
 {
     private $pdo;
 
@@ -11,39 +11,47 @@ class MenuController
 
     public function index($appType)
     {
+        $this->validateAppType($appType);
+
         $stmt = $this->pdo->prepare('SELECT * FROM `menu` WHERE app_type = :app_type ORDER BY sort_order ASC, id ASC');
         $stmt->execute([':app_type' => $appType]);
         $menus = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        $this->json(['code' => 0, 'data' => $this->buildTree($menus)]);
+        $this->success($this->buildTree($menus));
     }
 
     public function tree($appType)
     {
+        $this->validateAppType($appType);
+
         $stmt = $this->pdo->prepare('SELECT id, parent_id, name, path, icon, type, permission_key, sort_order FROM `menu` WHERE app_type = :app_type ORDER BY sort_order ASC, id ASC');
         $stmt->execute([':app_type' => $appType]);
         $menus = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        $this->json(['code' => 0, 'data' => $this->buildTree($menus)]);
+        $this->success($this->buildTree($menus));
     }
 
     public function enabled($appType)
     {
+        $this->validateAppType($appType);
+
         $stmt = $this->pdo->prepare('SELECT * FROM `menu` WHERE app_type = :app_type AND status = 1 ORDER BY sort_order ASC, id ASC');
         $stmt->execute([':app_type' => $appType]);
         $menus = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        $this->json(['code' => 0, 'data' => $this->buildTree($menus)]);
+        $this->success($this->buildTree($menus));
     }
 
     public function enabledTree($appType)
     {
+        $this->validateAppType($appType);
+
         $stmt = $this->pdo->prepare('SELECT id, parent_id, name, path, icon, type, permission_key, sort_order FROM `menu` WHERE app_type = :app_type AND status = 1 ORDER BY sort_order ASC, id ASC');
         $stmt->execute([':app_type' => $appType]);
         $menus = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        $this->json(['code' => 0, 'data' => $this->buildTree($menus)]);
+        $this->success($this->buildTree($menus));
     }
 
     public function store()
     {
-        $data = $this->getInput();
+        $data = $this->getJsonBody();
         $name = $data['name'] ?? '';
         $appType = $data['app_type'] ?? '';
         $parentId = $data['parent_id'] ?? 0;
@@ -56,7 +64,25 @@ class MenuController
         $status = $data['status'] ?? 1;
 
         if (empty($name) || empty($appType)) {
-            $this->json(['code' => 1, 'message' => 'name, app_type 为必填项'], 400);
+            $this->error('name, app_type 为必填项', 1, 400);
+        }
+
+        $this->validateAppType($appType);
+
+        if (strlen($name) > 64) {
+            $this->error('菜单名称不能超过 64 个字符', 1, 400);
+        }
+
+        if ($parentId > 0) {
+            $stmt = $this->pdo->prepare('SELECT id, app_type FROM `menu` WHERE id = :id');
+            $stmt->execute([':id' => intval($parentId)]);
+            $parent = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$parent) {
+                $this->error('父菜单不存在', 1, 400);
+            }
+            if ($parent['app_type'] !== $appType) {
+                $this->error('父菜单与当前菜单不属于同一端', 1, 400);
+            }
         }
 
         $stmt = $this->pdo->prepare('INSERT INTO `menu` (parent_id, name, path, icon, component, app_type, sort_order, type, permission_key, status) VALUES (:parent_id, :name, :path, :icon, :component, :app_type, :sort_order, :type, :permission_key, :status)');
@@ -73,14 +99,21 @@ class MenuController
             ':status' => intval($status),
         ]);
 
-        $this->json(['code' => 0, 'data' => ['id' => $this->pdo->lastInsertId()], 'message' => '创建成功']);
+        $this->success(['id' => $this->pdo->lastInsertId()], '创建成功');
     }
 
     public function update($id)
     {
-        $data = $this->getInput();
+        $data = $this->getJsonBody();
         $fields = [];
-        $params = [':id' => $id];
+        $params = [':id' => intval($id)];
+
+        $stmt = $this->pdo->prepare('SELECT id, app_type, parent_id FROM `menu` WHERE id = :id');
+        $stmt->execute([':id' => intval($id)]);
+        $menu = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$menu) {
+            $this->error('菜单不存在', 1, 404);
+        }
 
         $allowFields = ['parent_id', 'name', 'path', 'icon', 'component', 'sort_order', 'type', 'permission_key', 'status'];
         foreach ($allowFields as $field) {
@@ -90,19 +123,47 @@ class MenuController
             }
         }
 
+        if (isset($params[':name']) && strlen(trim($params[':name'])) > 64) {
+            $this->error('菜单名称不能超过 64 个字符', 1, 400);
+        }
+
+        if (isset($params[':parent_id'])) {
+            $newParentId = intval($params[':parent_id']);
+            if ($newParentId > 0) {
+                if ($newParentId === intval($id)) {
+                    $this->error('不能将自己设为父菜单', 1, 400);
+                }
+                $stmt = $this->pdo->prepare('SELECT id, app_type FROM `menu` WHERE id = :id');
+                $stmt->execute([':id' => $newParentId]);
+                $parent = $stmt->fetch(PDO::FETCH_ASSOC);
+                if (!$parent) {
+                    $this->error('父菜单不存在', 1, 400);
+                }
+                if ($parent['app_type'] !== $menu['app_type']) {
+                    $this->error('父菜单与当前菜单不属于同一端', 1, 400);
+                }
+            }
+        }
+
         if (empty($fields)) {
-            $this->json(['code' => 1, 'message' => '无更新数据'], 400);
+            $this->error('无更新数据', 1, 400);
         }
 
         $sql = 'UPDATE `menu` SET ' . implode(', ', $fields) . ' WHERE id = :id';
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($params);
 
-        $this->json(['code' => 0, 'message' => '更新成功']);
+        $this->success(null, '更新成功');
     }
 
     public function delete($id)
     {
+        $stmt = $this->pdo->prepare('SELECT id FROM `menu` WHERE id = :id');
+        $stmt->execute([':id' => intval($id)]);
+        if (!$stmt->fetch()) {
+            $this->error('菜单不存在', 1, 404);
+        }
+
         $childIds = $this->getDescendantIds($id);
         $allIds = array_merge([$id], $childIds);
 
@@ -113,10 +174,10 @@ class MenuController
             $this->pdo->prepare("DELETE FROM `menu` WHERE id IN ($placeholders)")->execute($allIds);
 
             $this->pdo->commit();
-            $this->json(['code' => 0, 'message' => '删除成功']);
+            $this->success(null, '删除成功');
         } catch (Exception $e) {
             $this->pdo->rollBack();
-            $this->json(['code' => 1, 'message' => '删除失败: ' . $e->getMessage()], 500);
+            $this->error('删除失败: ' . $e->getMessage(), 1, 500);
         }
     }
 
@@ -145,20 +206,5 @@ class MenuController
             }
         }
         return $tree;
-    }
-
-    private function getInput()
-    {
-        $raw = file_get_contents('php://input');
-        $data = json_decode($raw, true);
-        return is_array($data) ? $data : [];
-    }
-
-    private function json($data, $statusCode = 200)
-    {
-        http_response_code($statusCode);
-        header('Content-Type: application/json; charset=utf-8');
-        echo json_encode($data, JSON_UNESCAPED_UNICODE);
-        exit;
     }
 }

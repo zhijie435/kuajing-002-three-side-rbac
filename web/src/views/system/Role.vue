@@ -322,6 +322,7 @@ import {
   assignRolePermissions,
   batchAssignRoleMenus,
   batchAssignRolePermissions,
+  getRoleMatrix,
   assignRoleMatrix,
 } from '@/api/role'
 import { getMenuList, getEnabledMenuList } from '@/api/menu'
@@ -594,51 +595,26 @@ async function openPermMatrix(role) {
   menuOptions.value = []
   allPermissions.value = []
 
-  await Promise.all([
-    loadMenuOptions(role.app_type),
-    loadAllPermissions(role.app_type),
-  ])
+  const res = await getRoleMatrix(role.id)
+  const matrixDataResp = res.data || {}
 
-  const [menuRes, permRes] = await Promise.all([
-    getRoleMenus(role.id),
-    getRolePermissions(role.id),
-  ])
-  const grantedMenuIds = new Set(menuRes.data || [])
-  const grantedPermIds = new Set(permRes.data || [])
+  menuOptions.value = matrixDataResp.menu_tree || []
+  allPermissions.value = matrixDataResp.permissions || []
+  allPermIds.value = allPermissions.value.map((p) => p.id)
 
-  const flatMenus = flattenMenus(menuOptions.value)
-  const rows = []
-  for (const menu of flatMenus) {
-    const perms = allPermissions.value.filter((p) => p.menu_id === menu.id)
-    const menuChecked = grantedMenuIds.has(menu.id)
-    if (perms.length > 0) {
-      for (const perm of perms) {
-        rows.push({
-          menuId: menu.id,
-          menuName: menu.name,
-          permissionId: perm.id,
-          permissionName: perm.name,
-          permissionCode: perm.code,
-          menuChecked,
-          permChecked: grantedPermIds.has(perm.id),
-          checked: grantedPermIds.has(perm.id),
-          type: 'permission',
-        })
-      }
-    } else {
-      rows.push({
-        menuId: menu.id,
-        menuName: menu.name,
-        permissionId: null,
-        permissionName: '-',
-        permissionCode: '-',
-        menuChecked,
-        permChecked: false,
-        checked: menuChecked,
-        type: 'menu',
-      })
-    }
-  }
+  const serverRows = matrixDataResp.matrix_rows || []
+  const rows = serverRows.map((r) => ({
+    menuId: r.menu_id,
+    menuName: r.menu_name,
+    permissionId: r.permission_id,
+    permissionName: r.permission_name,
+    permissionCode: r.permission_code,
+    menuChecked: r.menu_checked,
+    permChecked: r.permission_checked,
+    checked: r.type === 'permission' ? r.permission_checked : r.menu_checked,
+    type: r.type,
+  }))
+
   matrixData.value = rows
   matrixOriginalSnapshot.value = JSON.parse(JSON.stringify(rows))
   matrixLastError.value = null

@@ -1,6 +1,6 @@
 <?php
 
-class PermissionController
+class PermissionController extends Controller
 {
     private $pdo;
 
@@ -11,23 +11,27 @@ class PermissionController
 
     public function index($appType)
     {
+        $this->validateAppType($appType);
+
         $stmt = $this->pdo->prepare('SELECT p.*, m.name AS menu_name FROM `permission` p LEFT JOIN `menu` m ON p.menu_id = m.id WHERE p.app_type = :app_type ORDER BY p.id ASC');
         $stmt->execute([':app_type' => $appType]);
         $permissions = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        $this->json(['code' => 0, 'data' => $permissions]);
+        $this->success($permissions);
     }
 
     public function enabled($appType)
     {
+        $this->validateAppType($appType);
+
         $stmt = $this->pdo->prepare('SELECT p.*, m.name AS menu_name FROM `permission` p LEFT JOIN `menu` m ON p.menu_id = m.id WHERE p.app_type = :app_type AND p.status = 1 ORDER BY p.id ASC');
         $stmt->execute([':app_type' => $appType]);
         $permissions = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        $this->json(['code' => 0, 'data' => $permissions]);
+        $this->success($permissions);
     }
 
     public function store()
     {
-        $data = $this->getInput();
+        $data = $this->getJsonBody();
         $name = $data['name'] ?? '';
         $code = $data['code'] ?? '';
         $appType = $data['app_type'] ?? '';
@@ -36,13 +40,35 @@ class PermissionController
         $status = $data['status'] ?? 1;
 
         if (empty($name) || empty($code) || empty($appType)) {
-            $this->json(['code' => 1, 'message' => 'name, code, app_type 为必填项'], 400);
+            $this->error('name, code, app_type 为必填项', 1, 400);
+        }
+
+        $this->validateAppType($appType);
+
+        if (strlen($name) > 64) {
+            $this->error('权限名称不能超过 64 个字符', 1, 400);
+        }
+
+        if (strlen($code) > 128) {
+            $this->error('权限编码不能超过 128 个字符', 1, 400);
+        }
+
+        if ($menuId > 0) {
+            $stmt = $this->pdo->prepare('SELECT id, app_type FROM `menu` WHERE id = :id');
+            $stmt->execute([':id' => intval($menuId)]);
+            $menu = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$menu) {
+                $this->error('关联菜单不存在', 1, 400);
+            }
+            if ($menu['app_type'] !== $appType) {
+                $this->error('关联菜单与当前权限不属于同一端', 1, 400);
+            }
         }
 
         $stmt = $this->pdo->prepare('SELECT id FROM `permission` WHERE code = :code AND app_type = :app_type');
         $stmt->execute([':code' => $code, ':app_type' => $appType]);
         if ($stmt->fetch()) {
-            $this->json(['code' => 1, 'message' => '同端下权限编码已存在'], 409);
+            $this->error('同端下权限编码已存在', 1, 409);
         }
 
         $stmt = $this->pdo->prepare('INSERT INTO `permission` (name, code, menu_id, app_type, description, status) VALUES (:name, :code, :menu_id, :app_type, :description, :status)');
@@ -55,14 +81,21 @@ class PermissionController
             ':status' => intval($status),
         ]);
 
-        $this->json(['code' => 0, 'data' => ['id' => $this->pdo->lastInsertId()], 'message' => '创建成功']);
+        $this->success(['id' => $this->pdo->lastInsertId()], '创建成功');
     }
 
     public function update($id)
     {
-        $data = $this->getInput();
+        $data = $this->getJsonBody();
         $fields = [];
-        $params = [':id' => $id];
+        $params = [':id' => intval($id)];
+
+        $stmt = $this->pdo->prepare('SELECT id, app_type FROM `permission` WHERE id = :id');
+        $stmt->execute([':id' => intval($id)]);
+        $permission = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$permission) {
+            $this->error('权限不存在', 1, 404);
+        }
 
         $allowFields = ['name', 'code', 'menu_id', 'description', 'status'];
         foreach ($allowFields as $field) {
@@ -72,44 +105,70 @@ class PermissionController
             }
         }
 
+        if (isset($params[':name']) && strlen(trim($params[':name'])) > 64) {
+            $this->error('权限名称不能超过 64 个字符', 1, 400);
+        }
+
+        if (isset($params[':code']) && strlen(trim($params[':code'])) > 128) {
+            $this->error('权限编码不能超过 128 个字符', 1, 400);
+        }
+
+        if (isset($params[':code'])) {
+            $stmt = $this->pdo->prepare('SELECT id FROM `permission` WHERE code = :code AND app_type = :app_type AND id != :exclude_id');
+            $stmt->execute([
+                ':code' => $params[':code'],
+                ':app_type' => $permission['app_type'],
+                ':exclude_id' => intval($id),
+            ]);
+            if ($stmt->fetch()) {
+                $this->error('同端下权限编码已存在', 1, 409);
+            }
+        }
+
+        if (isset($params[':menu_id'])) {
+            $newMenuId = intval($params[':menu_id']);
+            if ($newMenuId > 0) {
+                $stmt = $this->pdo->prepare('SELECT id, app_type FROM `menu` WHERE id = :id');
+                $stmt->execute([':id' => $newMenuId]);
+                $menu = $stmt->fetch(PDO::FETCH_ASSOC);
+                if (!$menu) {
+                    $this->error('关联菜单不存在', 1, 400);
+                }
+                if ($menu['app_type'] !== $permission['app_type']) {
+                    $this->error('关联菜单与当前权限不属于同一端', 1, 400);
+                }
+            }
+        }
+
         if (empty($fields)) {
-            $this->json(['code' => 1, 'message' => '无更新数据'], 400);
+            $this->error('无更新数据', 1, 400);
         }
 
         $sql = 'UPDATE `permission` SET ' . implode(', ', $fields) . ' WHERE id = :id';
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($params);
 
-        $this->json(['code' => 0, 'message' => '更新成功']);
+        $this->success(null, '更新成功');
     }
 
     public function delete($id)
     {
+        $stmt = $this->pdo->prepare('SELECT id FROM `permission` WHERE id = :id');
+        $stmt->execute([':id' => intval($id)]);
+        if (!$stmt->fetch()) {
+            $this->error('权限不存在', 1, 404);
+        }
+
         $this->pdo->beginTransaction();
         try {
-            $this->pdo->prepare('DELETE FROM role_permission WHERE permission_id = :permission_id')->execute([':permission_id' => $id]);
-            $this->pdo->prepare('DELETE FROM `permission` WHERE id = :id')->execute([':id' => $id]);
+            $this->pdo->prepare('DELETE FROM role_permission WHERE permission_id = :permission_id')->execute([':permission_id' => intval($id)]);
+            $this->pdo->prepare('DELETE FROM `permission` WHERE id = :id')->execute([':id' => intval($id)]);
 
             $this->pdo->commit();
-            $this->json(['code' => 0, 'message' => '删除成功']);
+            $this->success(null, '删除成功');
         } catch (Exception $e) {
             $this->pdo->rollBack();
-            $this->json(['code' => 1, 'message' => '删除失败: ' . $e->getMessage()], 500);
+            $this->error('删除失败: ' . $e->getMessage(), 1, 500);
         }
-    }
-
-    private function getInput()
-    {
-        $raw = file_get_contents('php://input');
-        $data = json_decode($raw, true);
-        return is_array($data) ? $data : [];
-    }
-
-    private function json($data, $statusCode = 200)
-    {
-        http_response_code($statusCode);
-        header('Content-Type: application/json; charset=utf-8');
-        echo json_encode($data, JSON_UNESCAPED_UNICODE);
-        exit;
     }
 }
