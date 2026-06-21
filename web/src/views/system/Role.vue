@@ -412,6 +412,10 @@ const permissionGroups = computed(() => {
 
 async function loadRoles() {
   clearSelection()
+  menuOptions.value = []
+  allPermissions.value = []
+  allPermIds.value = []
+  currentRole.value = {}
   const res = await getRoleList(appType.value)
   roleList.value = res.data || []
 }
@@ -467,10 +471,15 @@ async function handleDeleteRole(id) {
 }
 
 async function openMenuAuth(role) {
-  currentRole.value = role
+  currentRole.value = { ...role }
+  checkedMenuKeys.value = []
+  menuOptions.value = []
+
   await loadMenuOptions(role.app_type)
   const res = await getRoleMenus(role.id)
   checkedMenuKeys.value = res.data || []
+
+  await nextTick()
   menuAuthVisible.value = true
   await nextTick()
   menuTreeRef.value?.setCheckedKeys(checkedMenuKeys.value)
@@ -510,10 +519,16 @@ async function handleAssignMenus() {
 }
 
 async function openPermAuth(role) {
-  currentRole.value = role
+  currentRole.value = { ...role }
+  checkedPermIds.value = []
+  allPermIds.value = []
+  allPermissions.value = []
+
   await loadAllPermissions(role.app_type)
   const res = await getRolePermissions(role.id)
   checkedPermIds.value = res.data || []
+
+  await nextTick()
   permAuthVisible.value = true
 }
 
@@ -551,9 +566,18 @@ async function handleAssignPermissions() {
 }
 
 async function openPermMatrix(role) {
-  currentRole.value = role
-  await loadMenuOptions(role.app_type)
-  await loadAllPermissions(role.app_type)
+  currentRole.value = { ...role }
+  matrixData.value = []
+  matrixOriginalSnapshot.value = null
+  matrixLastError.value = null
+  matrixSubmitFailed.value = false
+  menuOptions.value = []
+  allPermissions.value = []
+
+  await Promise.all([
+    loadMenuOptions(role.app_type),
+    loadAllPermissions(role.app_type),
+  ])
 
   const [menuRes, permRes] = await Promise.all([
     getRoleMenus(role.id),
@@ -599,6 +623,8 @@ async function openPermMatrix(role) {
   matrixOriginalSnapshot.value = JSON.parse(JSON.stringify(rows))
   matrixLastError.value = null
   matrixSubmitFailed.value = false
+
+  await nextTick()
   matrixVisible.value = true
 }
 
@@ -837,16 +863,32 @@ async function handleBatchAssignPermissions() {
 }
 
 async function afterBatchAuthRefresh() {
-  await loadRoles()
+  await Promise.all([
+    loadRoles(),
+    loadMenuOptions(),
+    loadAllPermissions(),
+  ])
   clearSelection()
 }
 
 async function afterAuthRefresh() {
   await loadRoles()
+
+  const currentAppType = currentRole.value?.app_type || appType.value
+  await Promise.all([
+    loadMenuOptions(currentAppType),
+    loadAllPermissions(currentAppType),
+  ])
+
+  const updatedRole = roleList.value.find((r) => r.id === currentRole.value?.id)
+  if (updatedRole) {
+    currentRole.value = { ...updatedRole }
+  }
+
   if (
     userStore.role &&
-    userStore.role.id === currentRole.value.id &&
-    userStore.appType === appType.value
+    userStore.role.id === currentRole.value?.id &&
+    userStore.appType === currentAppType
   ) {
     await userStore.fetchUserInfo()
   }
