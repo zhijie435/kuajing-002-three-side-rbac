@@ -154,26 +154,33 @@ class RoleController
 
         if (!empty($menuIds)) {
             $placeholders = implode(',', array_fill(0, count($menuIds), '?'));
-            $stmt = $this->pdo->prepare("SELECT id, name, app_type FROM `menu` WHERE id IN ($placeholders)");
+            $stmt = $this->pdo->prepare("SELECT id, name, app_type, status FROM `menu` WHERE id IN ($placeholders)");
             $stmt->execute($menuIds);
             $menus = $stmt->fetchAll(PDO::FETCH_ASSOC);
             $foundMenuIds = array_column($menus, 'id');
             $invalidMenuIds = array_values(array_diff($menuIds, $foundMenuIds));
 
             $wrongAppMenuIds = [];
+            $disabledMenuIds = [];
             foreach ($menus as $m) {
                 if ($m['app_type'] !== $role['app_type']) {
                     $wrongAppMenuIds[] = intval($m['id']);
                 }
+                if (intval($m['status']) !== 1) {
+                    $disabledMenuIds[] = intval($m['id']);
+                }
             }
 
-            if (!empty($invalidMenuIds) || !empty($wrongAppMenuIds)) {
+            if (!empty($invalidMenuIds) || !empty($wrongAppMenuIds) || !empty($disabledMenuIds)) {
                 $reasons = [];
                 if (!empty($invalidMenuIds)) {
                     $reasons[] = '不存在的菜单ID: ' . implode(', ', $invalidMenuIds);
                 }
                 if (!empty($wrongAppMenuIds)) {
                     $reasons[] = '角色端类型[' . $role['app_type'] . ']不匹配的菜单ID: ' . implode(', ', $wrongAppMenuIds);
+                }
+                if (!empty($disabledMenuIds)) {
+                    $reasons[] = '已禁用的菜单ID: ' . implode(', ', $disabledMenuIds);
                 }
                 $this->json(['code' => 1, 'message' => implode('；', $reasons)], 400);
             }
@@ -214,26 +221,33 @@ class RoleController
 
         if (!empty($permissionIds)) {
             $placeholders = implode(',', array_fill(0, count($permissionIds), '?'));
-            $stmt = $this->pdo->prepare("SELECT id, name, app_type FROM `permission` WHERE id IN ($placeholders)");
+            $stmt = $this->pdo->prepare("SELECT id, name, app_type, status FROM `permission` WHERE id IN ($placeholders)");
             $stmt->execute($permissionIds);
             $permissions = $stmt->fetchAll(PDO::FETCH_ASSOC);
             $foundPermIds = array_column($permissions, 'id');
             $invalidPermIds = array_values(array_diff($permissionIds, $foundPermIds));
 
             $wrongAppPermIds = [];
+            $disabledPermIds = [];
             foreach ($permissions as $p) {
                 if ($p['app_type'] !== $role['app_type']) {
                     $wrongAppPermIds[] = intval($p['id']);
                 }
+                if (intval($p['status']) !== 1) {
+                    $disabledPermIds[] = intval($p['id']);
+                }
             }
 
-            if (!empty($invalidPermIds) || !empty($wrongAppPermIds)) {
+            if (!empty($invalidPermIds) || !empty($wrongAppPermIds) || !empty($disabledPermIds)) {
                 $reasons = [];
                 if (!empty($invalidPermIds)) {
                     $reasons[] = '不存在的权限ID: ' . implode(', ', $invalidPermIds);
                 }
                 if (!empty($wrongAppPermIds)) {
                     $reasons[] = '角色端类型[' . $role['app_type'] . ']不匹配的权限ID: ' . implode(', ', $wrongAppPermIds);
+                }
+                if (!empty($disabledPermIds)) {
+                    $reasons[] = '已禁用的权限ID: ' . implode(', ', $disabledPermIds);
                 }
                 $this->json(['code' => 1, 'message' => implode('；', $reasons)], 400);
             }
@@ -266,7 +280,7 @@ class RoleController
             $this->json(['code' => 1, 'message' => '角色不存在'], 404);
         }
 
-        $stmt = $this->pdo->prepare('SELECT menu_id FROM role_menu WHERE role_id = :role_id');
+        $stmt = $this->pdo->prepare('SELECT rm.menu_id FROM role_menu rm INNER JOIN `menu` m ON rm.menu_id = m.id WHERE rm.role_id = :role_id AND m.status = 1');
         $stmt->execute([':role_id' => intval($id)]);
         $menuIds = array_column($stmt->fetchAll(PDO::FETCH_ASSOC), 'menu_id');
         $this->json(['code' => 0, 'data' => array_map('intval', $menuIds)]);
@@ -280,7 +294,7 @@ class RoleController
             $this->json(['code' => 1, 'message' => '角色不存在'], 404);
         }
 
-        $stmt = $this->pdo->prepare('SELECT permission_id FROM role_permission WHERE role_id = :role_id');
+        $stmt = $this->pdo->prepare('SELECT rp.permission_id FROM role_permission rp INNER JOIN `permission` p ON rp.permission_id = p.id WHERE rp.role_id = :role_id AND p.status = 1');
         $stmt->execute([':role_id' => intval($id)]);
         $permissionIds = array_column($stmt->fetchAll(PDO::FETCH_ASSOC), 'permission_id');
         $this->json(['code' => 0, 'data' => array_map('intval', $permissionIds)]);
@@ -320,26 +334,33 @@ class RoleController
 
                 if (!empty($menuIds)) {
                     $placeholders = implode(',', array_fill(0, count($menuIds), '?'));
-                    $stmt = $this->pdo->prepare("SELECT id, name, app_type FROM `menu` WHERE id IN ($placeholders)");
+                    $stmt = $this->pdo->prepare("SELECT id, name, app_type, status FROM `menu` WHERE id IN ($placeholders)");
                     $stmt->execute($menuIds);
                     $menus = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     $foundMenuIds = array_column($menus, 'id');
                     $invalidMenuIds = array_values(array_diff($menuIds, $foundMenuIds));
 
                     $wrongAppMenuIds = [];
+                    $disabledMenuIds = [];
                     foreach ($menus as $m) {
                         if ($m['app_type'] !== $role['app_type']) {
                             $wrongAppMenuIds[] = intval($m['id']);
                         }
+                        if (intval($m['status']) !== 1) {
+                            $disabledMenuIds[] = intval($m['id']);
+                        }
                     }
 
-                    if (!empty($invalidMenuIds) || !empty($wrongAppMenuIds)) {
+                    if (!empty($invalidMenuIds) || !empty($wrongAppMenuIds) || !empty($disabledMenuIds)) {
                         $reasons = [];
                         if (!empty($invalidMenuIds)) {
                             $reasons[] = '不存在的菜单ID: ' . implode(', ', $invalidMenuIds);
                         }
                         if (!empty($wrongAppMenuIds)) {
                             $reasons[] = '角色端类型[' . $role['app_type'] . ']不匹配的菜单ID: ' . implode(', ', $wrongAppMenuIds);
+                        }
+                        if (!empty($disabledMenuIds)) {
+                            $reasons[] = '已禁用的菜单ID: ' . implode(', ', $disabledMenuIds);
                         }
                         $failCount++;
                         $failDetails[] = [
@@ -430,26 +451,33 @@ class RoleController
 
                 if (!empty($permissionIds)) {
                     $placeholders = implode(',', array_fill(0, count($permissionIds), '?'));
-                    $stmt = $this->pdo->prepare("SELECT id, name, app_type FROM `permission` WHERE id IN ($placeholders)");
+                    $stmt = $this->pdo->prepare("SELECT id, name, app_type, status FROM `permission` WHERE id IN ($placeholders)");
                     $stmt->execute($permissionIds);
                     $permissions = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     $foundPermIds = array_column($permissions, 'id');
                     $invalidPermIds = array_values(array_diff($permissionIds, $foundPermIds));
 
                     $wrongAppPermIds = [];
+                    $disabledPermIds = [];
                     foreach ($permissions as $p) {
                         if ($p['app_type'] !== $role['app_type']) {
                             $wrongAppPermIds[] = intval($p['id']);
                         }
+                        if (intval($p['status']) !== 1) {
+                            $disabledPermIds[] = intval($p['id']);
+                        }
                     }
 
-                    if (!empty($invalidPermIds) || !empty($wrongAppPermIds)) {
+                    if (!empty($invalidPermIds) || !empty($wrongAppPermIds) || !empty($disabledPermIds)) {
                         $reasons = [];
                         if (!empty($invalidPermIds)) {
                             $reasons[] = '不存在的权限ID: ' . implode(', ', $invalidPermIds);
                         }
                         if (!empty($wrongAppPermIds)) {
                             $reasons[] = '角色端类型[' . $role['app_type'] . ']不匹配的权限ID: ' . implode(', ', $wrongAppPermIds);
+                        }
+                        if (!empty($disabledPermIds)) {
+                            $reasons[] = '已禁用的权限ID: ' . implode(', ', $disabledPermIds);
                         }
                         $failCount++;
                         $failDetails[] = [

@@ -25,6 +25,22 @@ class MenuController
         $this->json(['code' => 0, 'data' => $this->buildTree($menus)]);
     }
 
+    public function enabled($appType)
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM `menu` WHERE app_type = :app_type AND status = 1 ORDER BY sort_order ASC, id ASC');
+        $stmt->execute([':app_type' => $appType]);
+        $menus = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $this->json(['code' => 0, 'data' => $this->buildTree($menus)]);
+    }
+
+    public function enabledTree($appType)
+    {
+        $stmt = $this->pdo->prepare('SELECT id, parent_id, name, path, icon, type, permission_key, sort_order FROM `menu` WHERE app_type = :app_type AND status = 1 ORDER BY sort_order ASC, id ASC');
+        $stmt->execute([':app_type' => $appType]);
+        $menus = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $this->json(['code' => 0, 'data' => $this->buildTree($menus)]);
+    }
+
     public function store()
     {
         $data = $this->getInput();

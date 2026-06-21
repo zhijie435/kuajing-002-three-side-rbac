@@ -17,11 +17,14 @@ $routes = [
 
     ['GET', '/api/menus/{appType}', 'MenuController@index'],
     ['GET', '/api/menus/{appType}/tree', 'MenuController@tree'],
+    ['GET', '/api/menus/{appType}/enabled', 'MenuController@enabled'],
+    ['GET', '/api/menus/{appType}/enabled/tree', 'MenuController@enabledTree'],
     ['POST', '/api/menus', 'MenuController@store'],
     ['PUT', '/api/menus/{id}', 'MenuController@update'],
     ['DELETE', '/api/menus/{id}', 'MenuController@delete'],
 
     ['GET', '/api/permissions/{appType}', 'PermissionController@index'],
+    ['GET', '/api/permissions/{appType}/enabled', 'PermissionController@enabled'],
     ['POST', '/api/permissions', 'PermissionController@store'],
     ['PUT', '/api/permissions/{id}', 'PermissionController@update'],
     ['DELETE', '/api/permissions/{id}', 'PermissionController@delete'],

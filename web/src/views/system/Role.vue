@@ -268,8 +268,8 @@ import {
   batchAssignRoleMenus,
   batchAssignRolePermissions,
 } from '@/api/role'
-import { getMenuList } from '@/api/menu'
-import { getPermissionList } from '@/api/permission'
+import { getMenuList, getEnabledMenuList } from '@/api/menu'
+import { getPermissionList, getEnabledPermissionList } from '@/api/permission'
 import { useUserStore } from '@/store/user'
 
 const userStore = useUserStore()
@@ -375,13 +375,13 @@ async function loadRoles() {
 
 async function loadMenuOptions(targetAppType) {
   const app = targetAppType || appType.value
-  const res = await getMenuList(app)
+  const res = await getEnabledMenuList(app)
   menuOptions.value = res.data || []
 }
 
 async function loadAllPermissions(targetAppType) {
   const app = targetAppType || appType.value
-  const res = await getPermissionList(app)
+  const res = await getEnabledPermissionList(app)
   allPermissions.value = res.data || []
   allPermIds.value = allPermissions.value.map((p) => p.id)
 }

@@ -8,6 +8,14 @@ export function getMenuTree(appType) {
   return request.get(`/menus/${appType}/tree`)
 }
 
+export function getEnabledMenuList(appType) {
+  return request.get(`/menus/${appType}/enabled`)
+}
+
+export function getEnabledMenuTree(appType) {
+  return request.get(`/menus/${appType}/enabled/tree`)
+}
+
 export function createMenu(data) {
   return request.post('/menus', data)
 }

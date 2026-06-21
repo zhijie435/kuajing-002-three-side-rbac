@@ -17,6 +17,14 @@ class PermissionController
         $this->json(['code' => 0, 'data' => $permissions]);
     }
 
+    public function enabled($appType)
+    {
+        $stmt = $this->pdo->prepare('SELECT p.*, m.name AS menu_name FROM `permission` p LEFT JOIN `menu` m ON p.menu_id = m.id WHERE p.app_type = :app_type AND p.status = 1 ORDER BY p.id ASC');
+        $stmt->execute([':app_type' => $appType]);
+        $permissions = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $this->json(['code' => 0, 'data' => $permissions]);
+    }
+
     public function store()
     {
         $data = $this->getInput();

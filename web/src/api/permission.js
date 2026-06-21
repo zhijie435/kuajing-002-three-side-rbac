@@ -4,6 +4,10 @@ export function getPermissionList(appType) {
   return request.get(`/permissions/${appType}`)
 }
 
+export function getEnabledPermissionList(appType) {
+  return request.get(`/permissions/${appType}/enabled`)
+}
+
 export function createPermission(data) {
   return request.post('/permissions', data)
 }
