@@ -237,6 +237,11 @@
               {{ row.role_name || '-' }}
             </template>
           </el-table-column>
+          <el-table-column prop="role_app_type" label="所属端" width="100">
+            <template #default="{ row }">
+              {{ row.role_app_type ? appTypeLabel(row.role_app_type) : '-' }}
+            </template>
+          </el-table-column>
           <el-table-column prop="reason" label="失败原因" min-width="200" />
         </el-table>
       </div>
@@ -363,17 +368,20 @@ const permissionGroups = computed(() => {
 })
 
 async function loadRoles() {
+  clearSelection()
   const res = await getRoleList(appType.value)
   roleList.value = res.data || []
 }
 
-async function loadMenuOptions() {
-  const res = await getMenuList(appType.value)
+async function loadMenuOptions(targetAppType) {
+  const app = targetAppType || appType.value
+  const res = await getMenuList(app)
   menuOptions.value = res.data || []
 }
 
-async function loadAllPermissions() {
-  const res = await getPermissionList(appType.value)
+async function loadAllPermissions(targetAppType) {
+  const app = targetAppType || appType.value
+  const res = await getPermissionList(app)
   allPermissions.value = res.data || []
   allPermIds.value = allPermissions.value.map((p) => p.id)
 }
@@ -417,7 +425,7 @@ async function handleDeleteRole(id) {
 
 async function openMenuAuth(role) {
   currentRole.value = role
-  await loadMenuOptions()
+  await loadMenuOptions(role.app_type)
   const res = await getRoleMenus(role.id)
   checkedMenuKeys.value = res.data || []
   menuAuthVisible.value = true
@@ -460,7 +468,7 @@ async function handleAssignMenus() {
 
 async function openPermAuth(role) {
   currentRole.value = role
-  await loadAllPermissions()
+  await loadAllPermissions(role.app_type)
   const res = await getRolePermissions(role.id)
   checkedPermIds.value = res.data || []
   permAuthVisible.value = true
@@ -501,8 +509,8 @@ async function handleAssignPermissions() {
 
 async function openPermMatrix(role) {
   currentRole.value = role
-  await loadMenuOptions()
-  await loadAllPermissions()
+  await loadMenuOptions(role.app_type)
+  await loadAllPermissions(role.app_type)
 
   const [menuRes, permRes] = await Promise.all([
     getRoleMenus(role.id),
@@ -616,12 +624,32 @@ function clearSelection() {
   roleTableRef.value?.clearSelection()
 }
 
-async function openBatchMenuAuth() {
+function validateSelectedRolesSameAppType() {
   if (selectedRoles.value.length === 0) {
     ElMessage.warning('请先选择角色')
-    return
+    return null
   }
-  await loadMenuOptions()
+  const appTypes = [...new Set(selectedRoles.value.map((r) => r.app_type))]
+  if (appTypes.length > 1) {
+    ElMessage.warning('批量授权仅支持选择同一端的角色')
+    return null
+  }
+  return appTypes[0]
+}
+
+function appTypeLabel(type) {
+  const map = {
+    platform: '平台端',
+    merchant: '商家端',
+    warehouse: '仓储端',
+  }
+  return map[type] || type
+}
+
+async function openBatchMenuAuth() {
+  const targetAppType = validateSelectedRolesSameAppType()
+  if (!targetAppType) return
+  await loadMenuOptions(targetAppType)
   batchCheckedMenuKeys.value = []
   batchMenuAuthVisible.value = true
   await nextTick()
@@ -664,11 +692,9 @@ async function handleBatchAssignMenus() {
 }
 
 async function openBatchPermAuth() {
-  if (selectedRoles.value.length === 0) {
-    ElMessage.warning('请先选择角色')
-    return
-  }
-  await loadAllPermissions()
+  const targetAppType = validateSelectedRolesSameAppType()
+  if (!targetAppType) return
+  await loadAllPermissions(targetAppType)
   batchCheckedPermIds.value = []
   batchPermAuthVisible.value = true
 }

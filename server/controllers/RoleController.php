@@ -154,14 +154,28 @@ class RoleController
 
         if (!empty($menuIds)) {
             $placeholders = implode(',', array_fill(0, count($menuIds), '?'));
-            $stmt = $this->pdo->prepare("SELECT COUNT(*) AS cnt FROM `menu` WHERE id IN ($placeholders) AND app_type = ?");
-            $params = $menuIds;
-            $params[] = $role['app_type'];
-            $stmt->execute($params);
-            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            $stmt = $this->pdo->prepare("SELECT id, name, app_type FROM `menu` WHERE id IN ($placeholders)");
+            $stmt->execute($menuIds);
+            $menus = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $foundMenuIds = array_column($menus, 'id');
+            $invalidMenuIds = array_values(array_diff($menuIds, $foundMenuIds));
 
-            if (intval($row['cnt']) !== count($menuIds)) {
-                $this->json(['code' => 1, 'message' => '提交的菜单包含无效或不属于当前端的菜单'], 400);
+            $wrongAppMenuIds = [];
+            foreach ($menus as $m) {
+                if ($m['app_type'] !== $role['app_type']) {
+                    $wrongAppMenuIds[] = intval($m['id']);
+                }
+            }
+
+            if (!empty($invalidMenuIds) || !empty($wrongAppMenuIds)) {
+                $reasons = [];
+                if (!empty($invalidMenuIds)) {
+                    $reasons[] = '不存在的菜单ID: ' . implode(', ', $invalidMenuIds);
+                }
+                if (!empty($wrongAppMenuIds)) {
+                    $reasons[] = '角色端类型[' . $role['app_type'] . ']不匹配的菜单ID: ' . implode(', ', $wrongAppMenuIds);
+                }
+                $this->json(['code' => 1, 'message' => implode('；', $reasons)], 400);
             }
         }
 
@@ -200,14 +214,28 @@ class RoleController
 
         if (!empty($permissionIds)) {
             $placeholders = implode(',', array_fill(0, count($permissionIds), '?'));
-            $stmt = $this->pdo->prepare("SELECT COUNT(*) AS cnt FROM `permission` WHERE id IN ($placeholders) AND app_type = ?");
-            $params = $permissionIds;
-            $params[] = $role['app_type'];
-            $stmt->execute($params);
-            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            $stmt = $this->pdo->prepare("SELECT id, name, app_type FROM `permission` WHERE id IN ($placeholders)");
+            $stmt->execute($permissionIds);
+            $permissions = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $foundPermIds = array_column($permissions, 'id');
+            $invalidPermIds = array_values(array_diff($permissionIds, $foundPermIds));
 
-            if (intval($row['cnt']) !== count($permissionIds)) {
-                $this->json(['code' => 1, 'message' => '提交的权限包含无效或不属于当前端的权限'], 400);
+            $wrongAppPermIds = [];
+            foreach ($permissions as $p) {
+                if ($p['app_type'] !== $role['app_type']) {
+                    $wrongAppPermIds[] = intval($p['id']);
+                }
+            }
+
+            if (!empty($invalidPermIds) || !empty($wrongAppPermIds)) {
+                $reasons = [];
+                if (!empty($invalidPermIds)) {
+                    $reasons[] = '不存在的权限ID: ' . implode(', ', $invalidPermIds);
+                }
+                if (!empty($wrongAppPermIds)) {
+                    $reasons[] = '角色端类型[' . $role['app_type'] . ']不匹配的权限ID: ' . implode(', ', $wrongAppPermIds);
+                }
+                $this->json(['code' => 1, 'message' => implode('；', $reasons)], 400);
             }
         }
 
@@ -292,18 +320,33 @@ class RoleController
 
                 if (!empty($menuIds)) {
                     $placeholders = implode(',', array_fill(0, count($menuIds), '?'));
-                    $stmt = $this->pdo->prepare("SELECT COUNT(*) AS cnt FROM `menu` WHERE id IN ($placeholders) AND app_type = ?");
-                    $params = $menuIds;
-                    $params[] = $role['app_type'];
-                    $stmt->execute($params);
-                    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+                    $stmt = $this->pdo->prepare("SELECT id, name, app_type FROM `menu` WHERE id IN ($placeholders)");
+                    $stmt->execute($menuIds);
+                    $menus = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                    $foundMenuIds = array_column($menus, 'id');
+                    $invalidMenuIds = array_values(array_diff($menuIds, $foundMenuIds));
 
-                    if (intval($row['cnt']) !== count($menuIds)) {
+                    $wrongAppMenuIds = [];
+                    foreach ($menus as $m) {
+                        if ($m['app_type'] !== $role['app_type']) {
+                            $wrongAppMenuIds[] = intval($m['id']);
+                        }
+                    }
+
+                    if (!empty($invalidMenuIds) || !empty($wrongAppMenuIds)) {
+                        $reasons = [];
+                        if (!empty($invalidMenuIds)) {
+                            $reasons[] = '不存在的菜单ID: ' . implode(', ', $invalidMenuIds);
+                        }
+                        if (!empty($wrongAppMenuIds)) {
+                            $reasons[] = '角色端类型[' . $role['app_type'] . ']不匹配的菜单ID: ' . implode(', ', $wrongAppMenuIds);
+                        }
                         $failCount++;
                         $failDetails[] = [
                             'role_id' => $roleId,
                             'role_name' => $role['name'],
-                            'reason' => '提交的菜单包含无效或不属于当前端的菜单',
+                            'role_app_type' => $role['app_type'],
+                            'reason' => implode('；', $reasons),
                         ];
                         continue;
                     }
@@ -387,18 +430,33 @@ class RoleController
 
                 if (!empty($permissionIds)) {
                     $placeholders = implode(',', array_fill(0, count($permissionIds), '?'));
-                    $stmt = $this->pdo->prepare("SELECT COUNT(*) AS cnt FROM `permission` WHERE id IN ($placeholders) AND app_type = ?");
-                    $params = $permissionIds;
-                    $params[] = $role['app_type'];
-                    $stmt->execute($params);
-                    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+                    $stmt = $this->pdo->prepare("SELECT id, name, app_type FROM `permission` WHERE id IN ($placeholders)");
+                    $stmt->execute($permissionIds);
+                    $permissions = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                    $foundPermIds = array_column($permissions, 'id');
+                    $invalidPermIds = array_values(array_diff($permissionIds, $foundPermIds));
 
-                    if (intval($row['cnt']) !== count($permissionIds)) {
+                    $wrongAppPermIds = [];
+                    foreach ($permissions as $p) {
+                        if ($p['app_type'] !== $role['app_type']) {
+                            $wrongAppPermIds[] = intval($p['id']);
+                        }
+                    }
+
+                    if (!empty($invalidPermIds) || !empty($wrongAppPermIds)) {
+                        $reasons = [];
+                        if (!empty($invalidPermIds)) {
+                            $reasons[] = '不存在的权限ID: ' . implode(', ', $invalidPermIds);
+                        }
+                        if (!empty($wrongAppPermIds)) {
+                            $reasons[] = '角色端类型[' . $role['app_type'] . ']不匹配的权限ID: ' . implode(', ', $wrongAppPermIds);
+                        }
                         $failCount++;
                         $failDetails[] = [
                             'role_id' => $roleId,
                             'role_name' => $role['name'],
-                            'reason' => '提交的权限包含无效或不属于当前端的权限',
+                            'role_app_type' => $role['app_type'],
+                            'reason' => implode('；', $reasons),
                         ];
                         continue;
                     }
