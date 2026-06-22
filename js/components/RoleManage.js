@@ -6,11 +6,12 @@ const RoleManageComponent = {
         }
     },
     setup(props) {
-        const { ref, onMounted, watch, reactive } = Vue;
+        const { ref, onMounted, watch, reactive, nextTick } = Vue;
         
         const roleList = ref([]);
         const loading = ref(false);
         const searchKeyword = ref('');
+        const rolePermissionCache = ref({});
         
         const dialogVisible = ref(false);
         const dialogTitle = ref('新增角色');
@@ -24,11 +25,30 @@ const RoleManageComponent = {
         });
         
         const permissionDialogVisible = ref(false);
+        const activeTab = ref('menu');
         const currentRole = ref(null);
         const menuTree = ref([]);
         const checkedMenus = ref([]);
         const checkedOperations = ref([]);
         const menuOperations = ref({});
+        
+        const loadRolePermissions = async (roleId) => {
+            try {
+                const [roleMenus, roleOps] = await Promise.all([
+                    api.roles.menus(roleId),
+                    api.roles.operations(roleId)
+                ]);
+                rolePermissionCache.value[roleId] = {
+                    menuCount: Array.isArray(roleMenus) ? roleMenus.length : 0,
+                    operationCount: Array.isArray(roleOps) ? roleOps.length : 0,
+                    menus: roleMenus,
+                    operations: roleOps
+                };
+                return rolePermissionCache.value[roleId];
+            } catch (e) {
+                return { menuCount: 0, operationCount: 0, menus: [], operations: [] };
+            }
+        };
         
         const loadRoles = async () => {
             loading.value = true;
@@ -39,11 +59,23 @@ const RoleManageComponent = {
                 }
                 const data = await api.roles.list(params);
                 roleList.value = data.list || [];
+                
+                for (const role of roleList.value) {
+                    await loadRolePermissions(role.id);
+                }
             } catch (e) {
                 console.error(e);
             } finally {
                 loading.value = false;
             }
+        };
+        
+        const getRoleMenuCount = (roleId) => {
+            return rolePermissionCache.value[roleId]?.menuCount || 0;
+        };
+        
+        const getRoleOperationCount = (roleId) => {
+            return rolePermissionCache.value[roleId]?.operationCount || 0;
         };
         
         const handleAdd = () => {
@@ -80,6 +112,7 @@ const RoleManageComponent = {
             ).then(async () => {
                 try {
                     await api.roles.delete(row.id);
+                    delete rolePermissionCache.value[row.id];
                     ElementPlus.ElMessage.success('删除成功');
                     loadRoles();
                 } catch (e) {
@@ -99,7 +132,7 @@ const RoleManageComponent = {
                     await api.roles.update(form.id, form);
                     ElementPlus.ElMessage.success('更新成功');
                 } else {
-                    await api.roles.create(form);
+                    const result = await api.roles.create(form);
                     ElementPlus.ElMessage.success('创建成功');
                 }
                 dialogVisible.value = false;
@@ -110,8 +143,13 @@ const RoleManageComponent = {
         };
         
         const handleAssignPermission = async (row) => {
-            currentRole.value = row;
+            currentRole.value = { ...row };
+            activeTab.value = 'menu';
             permissionDialogVisible.value = true;
+            checkedMenus.value = [];
+            checkedOperations.value = [];
+            menuOperations.value = {};
+            menuTree.value = [];
             
             try {
                 const [treeData, roleMenus, roleOps] = await Promise.all([
@@ -122,6 +160,7 @@ const RoleManageComponent = {
                 
                 menuTree.value = treeData;
                 
+                await nextTick();
                 checkedMenus.value = roleMenus.map(m => m.id);
                 checkedOperations.value = roleOps.map(o => o.id);
                 
@@ -141,6 +180,7 @@ const RoleManageComponent = {
                 
             } catch (e) {
                 console.error(e);
+                ElementPlus.ElMessage.error('加载权限数据失败');
             }
         };
         
@@ -148,18 +188,32 @@ const RoleManageComponent = {
             if (!currentRole.value) return;
             
             try {
-                await api.roles.assignMenus(currentRole.value.id, checkedMenus.value);
-                await api.roles.assignOperations(currentRole.value.id, checkedOperations.value);
+                await Promise.all([
+                    api.roles.assignMenus(currentRole.value.id, checkedMenus.value),
+                    api.roles.assignOperations(currentRole.value.id, checkedOperations.value)
+                ]);
+                
                 ElementPlus.ElMessage.success('权限分配成功');
+                
+                rolePermissionCache.value[currentRole.value.id] = {
+                    menuCount: checkedMenus.value.length,
+                    operationCount: checkedOperations.value.length,
+                    menus: checkedMenus.value,
+                    operations: checkedOperations.value
+                };
+                
                 permissionDialogVisible.value = false;
                 loadRoles();
             } catch (e) {
                 console.error(e);
+                ElementPlus.ElMessage.error('权限分配失败');
             }
         };
         
         const handleMenuCheck = (checkedKeys, info) => {
-            checkedMenus.value = checkedKeys;
+            checkedMenus.value = typeof checkedKeys === 'object' && checkedKeys.checkedKeys 
+                ? checkedKeys.checkedKeys 
+                : checkedKeys;
         };
         
         const handleOperationCheck = (menuId, operationId, checked) => {
@@ -190,6 +244,7 @@ const RoleManageComponent = {
         });
         
         watch(() => props.terminal, () => {
+            searchKeyword.value = '';
             loadRoles();
         });
         
@@ -201,6 +256,7 @@ const RoleManageComponent = {
             dialogTitle,
             form,
             permissionDialogVisible,
+            activeTab,
             currentRole,
             menuTree,
             checkedMenus,
@@ -208,6 +264,8 @@ const RoleManageComponent = {
             menuOperations,
             terminalOptions,
             loadRoles,
+            getRoleMenuCount,
+            getRoleOperationCount,
             handleAdd,
             handleEdit,
             handleDelete,
@@ -241,6 +299,7 @@ const RoleManageComponent = {
                     </template>
                 </el-input>
                 <el-button type="primary" @click="loadRoles">查询</el-button>
+                <el-button @click="searchKeyword = ''; loadRoles()">重置</el-button>
             </div>
             
             <el-table :data="roleList" v-loading="loading" border stripe>
@@ -252,6 +311,16 @@ const RoleManageComponent = {
                         <el-tag v-if="row.terminal === 'platform'" type="primary">平台端</el-tag>
                         <el-tag v-else-if="row.terminal === 'merchant'" type="success">商家端</el-tag>
                         <el-tag v-else type="warning">仓储端</el-tag>
+                    </template>
+                </el-table-column>
+                <el-table-column label="菜单权限数" width="110" align="center">
+                    <template #default="{ row }">
+                        <el-tag type="success" effect="plain">{{ getRoleMenuCount(row.id) }}</el-tag>
+                    </template>
+                </el-table-column>
+                <el-table-column label="操作权限数" width="110" align="center">
+                    <template #default="{ row }">
+                        <el-tag type="warning" effect="plain">{{ getRoleOperationCount(row.id) }}</el-tag>
                     </template>
                 </el-table-column>
                 <el-table-column prop="description" label="描述" />
@@ -278,7 +347,7 @@ const RoleManageComponent = {
             </el-table>
         </div>
         
-        <el-dialog v-model="dialogVisible" :title="dialogTitle" width="500px">
+        <el-dialog v-model="dialogVisible" :title="dialogTitle" width="500px" destroy-on-close>
             <el-form :model="form" label-width="100px">
                 <el-form-item label="角色名称">
                     <el-input v-model="form.name" placeholder="请输入角色名称" />
@@ -308,39 +377,44 @@ const RoleManageComponent = {
             </template>
         </el-dialog>
         
-        <el-dialog v-model="permissionDialogVisible" title="分配权限" width="650px" top="5vh">
+        <el-dialog v-model="permissionDialogVisible" title="分配权限" width="680px" top="5vh" destroy-on-close>
             <div v-if="currentRole" style="margin-bottom: 16px;">
                 <el-alert
-                    :title="'当前角色：' + currentRole.name"
+                    :title="'当前角色：' + currentRole.name + '（终端：' + (currentRole.terminal === 'platform' ? '平台端' : currentRole.terminal === 'merchant' ? '商家端' : '仓储端') + '）'"
                     type="info"
                     :closable="false"
                     show-icon />
             </div>
             
-            <el-tabs v-model="activeTab">
+            <el-tabs v-model="activeTab" type="border-card">
                 <el-tab-pane label="菜单权限" name="menu">
-                    <div class="permission-tree">
+                    <div class="permission-tree" style="padding: 8px;">
                         <el-tree
-                            ref="menuTreeRef"
                             :data="menuTree"
                             show-checkbox
                             node-key="id"
                             :props="{ label: 'name', children: 'children' }"
-                            v-model:checked-keys="checkedMenus"
+                            :checked-keys="checkedMenus"
                             default-expand-all
+                            :expand-on-click-node="false"
                             @check="handleMenuCheck" />
+                    </div>
+                    <div style="margin-top: 12px; padding: 10px; background: #f5f7fa; border-radius: 4px;">
+                        <span style="color: #606266;">已选菜单：</span>
+                        <el-tag type="success" style="margin-right: 4px;">{{ checkedMenus.length }}</el-tag>
+                        <span style="color: #909399; margin-left: 12px; font-size: 12px;">提示：选择父菜单将自动包含所有子菜单</span>
                     </div>
                 </el-tab-pane>
                 <el-tab-pane label="操作权限" name="operation">
-                    <div class="permission-tree">
-                        <div v-for="menu in menuTree" :key="menu.id" style="margin-bottom: 16px;">
-                            <div style="font-weight: 600; margin-bottom: 8px; color: #303133;">
-                                <el-icon style="vertical-align: middle; margin-right: 4px;"><Folder /></el-icon>
+                    <div class="permission-tree" style="padding: 8px; max-height: 500px; overflow-y: auto;">
+                        <div v-for="menu in menuTree" :key="menu.id" style="margin-bottom: 20px; border-bottom: 1px dashed #ebeef5; padding-bottom: 12px;">
+                            <div style="font-weight: 600; margin-bottom: 10px; color: #303133; font-size: 14px;">
+                                <el-icon style="vertical-align: middle; margin-right: 6px; color: #409eff;"><Folder /></el-icon>
                                 {{ menu.name }}
                             </div>
-                            <div v-for="child in menu.children" :key="child.id" style="margin: 8px 0; padding-left: 20px;">
-                                <div style="margin-bottom: 4px; color: #606266;">
-                                    <el-icon style="vertical-align: middle; margin-right: 4px;"><Document /></el-icon>
+                            <div v-for="child in menu.children" :key="child.id" style="margin: 10px 0; padding-left: 20px;">
+                                <div style="margin-bottom: 6px; color: #606266; font-size: 13px;">
+                                    <el-icon style="vertical-align: middle; margin-right: 4px; color: #67c23a;"><Document /></el-icon>
                                     {{ child.name }}
                                 </div>
                                 <div class="operation-tags" v-if="menuOperations[child.id] && menuOperations[child.id].length">
@@ -349,23 +423,34 @@ const RoleManageComponent = {
                                         :key="op.id"
                                         :model-value="isOperationChecked(op.id)"
                                         @change="(val) => handleOperationCheck(child.id, op.id, val)"
-                                        style="margin: 4px 12px 4px 0;">
-                                        {{ op.name }}
-                                        <span style="color: #909399; font-size: 12px; margin-left: 4px;">({{ op.code }})</span>
+                                        style="margin: 4px 16px 4px 0; padding: 2px 8px;">
+                                        <span style="font-size: 13px;">{{ op.name }}</span>
+                                        <span style="color: #909399; font-size: 11px; margin-left: 6px;">({{ op.code }})</span>
                                     </el-checkbox>
                                 </div>
                                 <div v-else style="padding-left: 24px; color: #c0c4cc; font-size: 12px;">
-                                    暂无操作权限
+                                    └─ 暂无操作权限定义
                                 </div>
                             </div>
                         </div>
+                        <div v-if="!menuTree.length" style="text-align: center; padding: 40px; color: #909399;">
+                            <el-icon style="font-size: 40px;"><DocumentDelete /></el-icon>
+                            <div style="margin-top: 8px;">暂无菜单数据</div>
+                        </div>
+                    </div>
+                    <div style="margin-top: 12px; padding: 10px; background: #f5f7fa; border-radius: 4px;">
+                        <span style="color: #606266;">已选操作权限：</span>
+                        <el-tag type="warning" style="margin-right: 4px;">{{ checkedOperations.length }}</el-tag>
+                        <span style="color: #909399; margin-left: 12px; font-size: 12px;">提示：勾选操作权限将自动关联所属菜单</span>
                     </div>
                 </el-tab-pane>
             </el-tabs>
             
             <template #footer>
                 <el-button @click="permissionDialogVisible = false">取消</el-button>
-                <el-button type="primary" @click="handleSavePermissions">保存</el-button>
+                <el-button type="primary" @click="handleSavePermissions" :loading="loading">
+                    保存权限分配
+                </el-button>
             </template>
         </el-dialog>
     `
