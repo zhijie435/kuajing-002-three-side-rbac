@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>三端角色权限矩阵管理系统</title>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus@2.4.4/dist/index.css">
+    <link rel="stylesheet" href="https://unpkg.com/@element-plus/icons-vue@2.3.1/dist/index.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body, #app { height: 100%; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+        
+        .layout { display: flex; height: 100%; }
+        .sidebar { width: 220px; background: #001529; color: #fff; display: flex; flex-direction: column; }
+        .sidebar-header { height: 60px; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: bold; border-bottom: 1px solid #1f2d3d; }
+        .sidebar-menu { flex: 1; overflow-y: auto; }
+        .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .header { height: 60px; background: #fff; border-bottom: 1px solid #e8e8e8; display: flex; align-items: center; padding: 0 20px; justify-content: space-between; }
+        .content { flex: 1; padding: 20px; background: #f0f2f5; overflow-y: auto; }
+        
+        .terminal-selector { display: flex; gap: 8px; }
+        .terminal-tab { padding: 6px 16px; border-radius: 4px; cursor: pointer; font-size: 14px; transition: all 0.3s; }
+        .terminal-tab.active { background: #409eff; color: #fff; }
+        .terminal-tab:not(.active):hover { background: #ecf5ff; color: #409eff; }
+        
+        .page-card { background: #fff; border-radius: 8px; padding: 20px; }
+        .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .page-title { font-size: 18px; font-weight: 600; color: #303133; }
+        
+        .toolbar { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+        
+        .el-menu { border-right: none !important; }
+        .el-menu--dark { background: #001529 !important; }
+        .el-sub-menu__title, .el-menu-item { color: rgba(255,255,255,0.7) !important; }
+        .el-menu-item.is-active { background: #409eff !important; color: #fff !important; }
+        
+        .permission-tree { max-height: 500px; overflow-y: auto; }
+        .operation-tags { margin-top: 8px; padding-left: 24px; }
+        .operation-tag { margin: 2px; }
+        
+        .matrix-table { width: 100%; border-collapse: collapse; }
+        .matrix-table th, .matrix-table td { border: 1px solid #ebeef5; padding: 10px; text-align: center; }
+        .matrix-table th { background: #fafafa; font-weight: 600; }
+        .matrix-table .menu-name { text-align: left; font-weight: 500; }
+        .matrix-table .sub-menu { padding-left: 30px; }
+        
+        .stats-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+        .stat-card { background: #fff; border-radius: 8px; padding: 20px; }
+        .stat-card .label { color: #909399; font-size: 14px; margin-bottom: 8px; }
+        .stat-card .value { font-size: 28px; font-weight: 600; color: #303133; }
+        .stat-card .icon { font-size: 32px; float: right; }
+    </style>
+</head>
+<body>
+<div id="app">
+    <div class="layout">
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <el-icon style="margin-right: 8px; font-size: 20px;"><Shield /></el-icon>
+                权限管理系统
+            </div>
+            <div class="sidebar-menu">
+                <el-menu
+                    :default-active="activeMenu"
+                    class="el-menu--dark"
+                    @select="handleMenuSelect"
+                    background-color="#001529"
+                    text-color="rgba(255,255,255,0.7)"
+                    active-text-color="#fff">
+                    <el-menu-item index="dashboard">
+                        <el-icon><DataAnalysis /></el-icon>
+                        <span>权限概览</span>
+                    </el-menu-item>
+                    <el-menu-item index="role">
+                        <el-icon><UserFilled /></el-icon>
+                        <span>角色管理</span>
+                    </el-menu-item>
+                    <el-menu-item index="menu">
+                        <el-icon><Menu /></el-icon>
+                        <span>菜单管理</span>
+                    </el-menu-item>
+                    <el-menu-item index="operation">
+                        <el-icon><Operation /></el-icon>
+                        <span>操作权限</span>
+                    </el-menu-item>
+                    <el-menu-item index="matrix">
+                        <el-icon><Grid /></el-icon>
+                        <span>权限矩阵</span>
+                    </el-menu-item>
+                </el-menu>
+            </div>
+        </div>
+        <div class="main">
+            <div class="header">
+                <div style="display: flex; align-items: center; gap: 16px;">
+                    <span style="font-size: 16px; font-weight: 500;">{{ pageTitle }}</span>
+                </div>
+                <div class="terminal-selector">
+                    <div 
+                        v-for="term in terminals" 
+                        :key="term.value"
+                        :class="['terminal-tab', { active: currentTerminal === term.value }]"
+                        @click="switchTerminal(term.value)">
+                        {{ term.label }}
+                    </div>
+                </div>
+            </div>
+            <div class="content">
+                <dashboard v-if="activeMenu === 'dashboard'" :terminal="currentTerminal" />
+                <role-manage v-else-if="activeMenu === 'role'" :terminal="currentTerminal" />
+                <menu-manage v-else-if="activeMenu === 'menu'" :terminal="currentTerminal" />
+                <operation-manage v-else-if="activeMenu === 'operation'" :terminal="currentTerminal" />
+                <permission-matrix v-else-if="activeMenu === 'matrix'" :terminal="currentTerminal" />
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/vue@3.4.21/dist/vue.global.prod.js"></script>
+<script src="https://unpkg.com/element-plus@2.4.4/dist/index.full.min.js"></script>
+<script src="https://unpkg.com/@element-plus/icons-vue@2.3.1/dist/index.iife.min.js"></script>
+
+<script src="js/api.js"></script>
+<script src="js/components/Dashboard.js"></script>
+<script src="js/components/RoleManage.js"></script>
+<script src="js/components/MenuManage.js"></script>
+<script src="js/components/OperationManage.js"></script>
+<script src="js/components/PermissionMatrix.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
